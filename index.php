@@ -1,12 +1,15 @@
 <?php
 session_start();
 
-// načtení a dekódování JSON dat
-$json = @file_get_contents('profile.json');
-$data = $json ? json_decode($json, true) : [];
-$name = isset($data['name']) ? $data['name'] : 'Neznámý uživatel';
-$skills = isset($data['skills']) && is_array($data['skills']) ? $data['skills'] : [];
-$projects = isset($data['projects']) && is_array($data['projects']) ? $data['projects'] : [];
+require_once 'init.php';
+
+// načtení dat z databáze
+$name = 'Neznámý uživatel'; // může být stále z profile.json nebo hardcoded
+$skills = []; // může být stále z profile.json nebo hardcoded
+
+// načtení zájmů z databáze
+$stmt = $db->query("SELECT * FROM interests");
+$projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // připravíme proměnné pro notifikace ze session
 $message = isset($_SESSION['message']) ? $_SESSION['message'] : '';
@@ -22,19 +25,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['message'] = 'Pole nesmí být prázdné.';
             $_SESSION['messageType'] = 'error';
         } else {
-            // porovnáme bez velikosti písmen
-            $lowered = strtolower($new);
-            $existing = array_map('strtolower', $projects);
-            if (in_array($lowered, $existing, true)) {
-                $_SESSION['message'] = 'Tento zájem už existuje.';
-                $_SESSION['messageType'] = 'error';
-            } else {
-                // přidáme a uložíme zpět do JSON
-                $projects[] = $new;
-                $data['projects'] = $projects;
-                file_put_contents('profile.json', json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-                $_SESSION['message'] = 'Zájem byl úspěšně přidán.';
+            try {
+                $stmt = $db->prepare("INSERT INTO interests (name) VALUES (?)");
+                $stmt->execute([$new]);
+                $_SESSION['message'] = 'Zájem byl přidán.';
                 $_SESSION['messageType'] = 'success';
+            } catch (PDOException $e) {
+                if ($e->getCode() == 23000) { // UNIQUE constraint failed
+                    $_SESSION['message'] = 'Tento zájem už existuje.';
+                    $_SESSION['messageType'] = 'error';
+                } else {
+                    $_SESSION['message'] = 'Chyba při přidávání zájmu.';
+                    $_SESSION['messageType'] = 'error';
+                }
             }
         }
         header("Location: index.php");
@@ -42,56 +45,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     // odstranění zájmu
     elseif (isset($_POST['remove_interest'])) {
-        $index = (int)$_POST['remove_interest'];
-        if (!isset($projects[$index])) {
-            $_SESSION['message'] = 'Tento zájem nebyl nalezen.';
-            $_SESSION['messageType'] = 'error';
-        } else {
-            unset($projects[$index]);
-            // reindex pole
-            $projects = array_values($projects);
-            $data['projects'] = $projects;
-            file_put_contents('profile.json', json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-            $_SESSION['message'] = 'Zájem byl úspěšně odstraněn.';
+        $id = (int)$_POST['remove_interest'];
+        $stmt = $db->prepare("DELETE FROM interests WHERE id = ?");
+        $stmt->execute([$id]);
+        if ($stmt->rowCount() > 0) {
+            $_SESSION['message'] = 'Zájem byl odstraněn.';
             $_SESSION['messageType'] = 'success';
+        } else {
+            $_SESSION['message'] = 'Zájem nebyl nalezen.';
+            $_SESSION['messageType'] = 'error';
         }
         header("Location: index.php");
         exit;
     }
     // zahájení editace
     elseif (isset($_POST['edit_interest'])) {
-        $index = (int)$_POST['edit_interest'];
-        if (isset($projects[$index])) {
-            $_SESSION['editing'] = $index;
-        }
+        $id = (int)$_POST['edit_interest'];
+        $_SESSION['editing'] = $id;
         header("Location: index.php");
         exit;
     }
     // uložení editace
     elseif (isset($_POST['save_edit'])) {
-        $index = (int)$_POST['save_edit'];
+        $id = (int)$_POST['save_edit'];
         $new_value = trim($_POST['edited_interest']);
         if ($new_value === '') {
             $_SESSION['message'] = 'Pole nesmí být prázdné.';
             $_SESSION['messageType'] = 'error';
-        } elseif (!isset($projects[$index])) {
-            $_SESSION['message'] = 'Tento zájem nebyl nalezen.';
-            $_SESSION['messageType'] = 'error';
         } else {
-            // kontrola duplicit, kromě sebe
-            $lowered = strtolower($new_value);
-            $existing = array_map('strtolower', $projects);
-            unset($existing[$index]); // odstraníme sebe
-            if (in_array($lowered, $existing, true)) {
-                $_SESSION['message'] = 'Tento zájem už existuje.';
-                $_SESSION['messageType'] = 'error';
-            } else {
-                $projects[$index] = $new_value;
-                $data['projects'] = $projects;
-                file_put_contents('profile.json', json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-                $_SESSION['message'] = 'Zájem byl úspěšně upraven.';
-                $_SESSION['messageType'] = 'success';
-                unset($_SESSION['editing']);
+            try {
+                $stmt = $db->prepare("UPDATE interests SET name = ? WHERE id = ?");
+                $stmt->execute([$new_value, $id]);
+                if ($stmt->rowCount() > 0) {
+                    $_SESSION['message'] = 'Zájem byl upraven.';
+                    $_SESSION['messageType'] = 'success';
+                    unset($_SESSION['editing']);
+                } else {
+                    $_SESSION['message'] = 'Zájem nebyl nalezen.';
+                    $_SESSION['messageType'] = 'error';
+                }
+            } catch (PDOException $e) {
+                if ($e->getCode() == 23000) { // UNIQUE constraint failed
+                    $_SESSION['message'] = 'Tento zájem už existuje.';
+                    $_SESSION['messageType'] = 'error';
+                } else {
+                    $_SESSION['message'] = 'Chyba při úpravě zájmu.';
+                    $_SESSION['messageType'] = 'error';
+                }
             }
         }
         header("Location: index.php");
@@ -109,7 +109,6 @@ $editing = isset($_SESSION['editing']) ? $_SESSION['editing'] : null;
 
 ?>
 
-?>
 <!doctype html>
 <html lang="cs">
 <head>
@@ -139,15 +138,15 @@ $editing = isset($_SESSION['editing']) ? $_SESSION['editing'] : null;
       <h2>Projekty / Zájmy</h2>
       <?php if (!empty($projects)): ?>
         <ul>
-          <?php foreach ($projects as $index => $p): ?>
+          <?php foreach ($projects as $interest): ?>
             <li>
-              <?php echo htmlspecialchars($p); ?>
+              <?php echo htmlspecialchars($interest['name']); ?>
               <form method="POST" style="display: inline;">
-                <input type="hidden" name="edit_interest" value="<?php echo $index; ?>">
+                <input type="hidden" name="edit_interest" value="<?php echo $interest['id']; ?>">
                 <button type="submit">Upravit</button>
               </form>
               <form method="POST" style="display: inline;">
-                <input type="hidden" name="remove_interest" value="<?php echo $index; ?>">
+                <input type="hidden" name="remove_interest" value="<?php echo $interest['id']; ?>">
                 <button type="submit" onclick="return confirm('Opravdu chcete odstranit tento zájem?')">Smazat</button>
               </form>
             </li>
@@ -165,14 +164,26 @@ $editing = isset($_SESSION['editing']) ? $_SESSION['editing'] : null;
       <?php endif; ?>
 
       <!-- formulář pro editaci, pokud je aktivní -->
-      <?php if ($editing !== null && isset($projects[$editing])): ?>
-        <h3>Upravit zájem</h3>
-        <form method="POST">
-          <input type="text" name="edited_interest" value="<?php echo htmlspecialchars($projects[$editing]); ?>" required>
-          <input type="hidden" name="save_edit" value="<?php echo $editing; ?>">
-          <button type="submit">Uložit změny</button>
-          <button type="submit" name="cancel_edit">Zrušit</button>
-        </form>
+      <?php if ($editing !== null): ?>
+        <?php
+        // Najdeme zájem podle id
+        $editing_interest = null;
+        foreach ($projects as $interest) {
+          if ($interest['id'] == $editing) {
+            $editing_interest = $interest;
+            break;
+          }
+        }
+        ?>
+        <?php if ($editing_interest): ?>
+          <h3>Upravit zájem</h3>
+          <form method="POST">
+            <input type="text" name="edited_interest" value="<?php echo htmlspecialchars($editing_interest['name']); ?>" required>
+            <input type="hidden" name="save_edit" value="<?php echo $editing_interest['id']; ?>">
+            <button type="submit">Uložit změny</button>
+            <button type="submit" name="cancel_edit">Zrušit</button>
+          </form>
+        <?php endif; ?>
       <?php endif; ?>
 
       <!-- formulář pro nový zájem -->

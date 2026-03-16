@@ -10,7 +10,6 @@
     "projects": [
         "Webová prezentace",
         "API pro správu úloh",
-        "Interní nástroj pro import dat",
-        "MojeZajem"
+        "Interní nástroj pro import dat"
     ]
 }
