@@ -20,3 +20,42 @@ code{background:#eef2f6;padding:2px 6px;border-radius:4px}
 .success { color: #155724; background-color: #d4edda; padding: 8px; border-radius: 4px; }
 .error { color: #721c24; background-color: #f8d7da; padding: 8px; border-radius: 4px; }
 
+/* Button styles */
+button {
+  padding: 4px 8px;
+  margin-left: 4px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #f9fafb;
+  color: #374151;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.2s;
+}
+
+button:hover {
+  background: #f3f4f6;
+}
+
+.delete-btn {
+  background: #dc2626;
+  color: white;
+  border-color: #dc2626;
+}
+
+.delete-btn:hover {
+  background: #b91c1c;
+}
+
+form {
+  margin-bottom: 16px;
+}
+
+input[type="text"] {
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  margin-right: 8px;
+  font-size: 0.9rem;
+}
+
